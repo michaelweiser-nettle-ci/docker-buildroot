@@ -1,0 +1,22 @@
+#!/bin/bash
+
+[ "${DOCKER_TAG#[0-9]}" == "${DOCKER_TAG}" ] || \
+	BR_RELEASE="${DOCKER_TAG}"
+
+if [ "${BR_RELEASE%%-*}" != "${BR_RELEASE}" ] ; then
+	BR_ARCH="${BR_RELEASE#*-}"
+	BR_RELEASE="${BR_RELEASE%%-*}"
+fi
+
+if [ "${BR_ARCH%%-*}" != "${BR_ARCH}" ] ; then
+	BR_LIBC=${BR_ARCH#*-}
+	BR_ARCH=${BR_ARCH%%-*}
+fi
+
+BR_RELEASE="${BR_RELEASE/rc/-rc}"
+
+docker build -f $DOCKERFILE_PATH \
+	${BR_ARCH:+--build-arg} ${BR_ARCH:+BR_ARCH="$BR_ARCH"} \
+	${BR_RELEASE:+--build-arg} ${BR_RELEASE:+BR_RELEASE="$BR_RELEASE"} \
+	${BR_LIBC:+--build-arg} ${BR_LIBC:+BR_LIBC="$BR_LIBC"} \
+	-t $IMAGE_NAME .
