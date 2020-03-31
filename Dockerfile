@@ -31,7 +31,6 @@ RUN br_archive=buildroot-${BR_RELEASE}.tar.bz2 && \
 #   is derived from it
 # - 2020.02 supports toplevel parallel make, giving an about 25% speedup by
 #   running multiple downloads, configures and builds in parallel
-# - we need to explicitly allow relative paths in LD_LIBRARY_PATH with uClibc
 # - apart from prefixing their names we also unset generic build arg
 #   environment variables for good measure because e.g. python's configure picks
 #   up LIBC
@@ -53,7 +52,6 @@ RUN br_arch="${BR_ARCH}" ; br_libc="${BR_LIBC}" ; \
 		echo 'BR2_PACKAGE_GMP=y' ; \
 		echo 'BR2_PER_PACKAGE_DIRECTORIES=y' ; \
 	) > .config && \
-	echo LDSO_SAFE_RUNPATH=n >> package/uclibc/uClibc-ng.config && \
 	make olddefconfig && \
 	triple="$(make printvars VARS=GNU_TARGET_NAME | \
 		sed -e "s,.*=armeb-,${br_arch}-,")" && \
