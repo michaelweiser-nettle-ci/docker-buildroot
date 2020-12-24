@@ -1,9 +1,5 @@
 FROM debian:buster AS build
 
-ARG BR_ARCH=armv5b
-ARG BR_RELEASE=2020.02.8
-ARG BR_LIBC=uclibc
-
 MAINTAINER Michael Weiser <michael.weiser@gmx.de>
 
 RUN apt-get update -qq -y && \
@@ -18,6 +14,10 @@ RUN apt-get update -qq -y && \
 RUN useradd -d /buildroot -m buildroot
 USER buildroot
 WORKDIR /buildroot
+
+ARG BR_ARCH=armv5b
+ARG BR_RELEASE=2020.02.8
+ARG BR_LIBC=uclibc
 
 # plain HTTP to allow caching, verification necessary anyway
 COPY buildroot-*.tar.bz2.sha256sum /buildroot/
