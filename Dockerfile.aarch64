@@ -1,0 +1,88 @@
+FROM debian:buster AS build
+
+MAINTAINER Michael Weiser <michael.weiser@gmx.de>
+
+RUN apt-get update -qq -y && \
+	apt-get dist-upgrade -y && \
+	apt-get autoremove -y && \
+	apt-get install -y cpio dash bc bzip2 file g++ make patch perl python \
+		rsync unzip wget && \
+	apt-get clean all && \
+	rm -rf /var/lib/apt/lists/*
+
+# buildroot (or some of its packages at least) do not want to be built as root
+RUN useradd -d /buildroot -m buildroot
+USER buildroot
+WORKDIR /buildroot
+
+ARG BR_RELEASE=2020.11.1
+ARG BR_LIBC=uclibc
+
+# plain HTTP to allow caching, verification necessary anyway
+COPY buildroot-*.tar.bz2.sha256sum /buildroot/
+RUN br_archive=buildroot-${BR_RELEASE}.tar.bz2 && \
+	wget http://buildroot.org/downloads/${br_archive} && \
+		sha256sum -c ${br_archive}.sha256sum && \
+		tar -xf ${br_archive} --strip-components=1 && \
+		rm -f ${br_archive}
+
+# - 2020.02 supports toplevel parallel make, giving an about 25% speedup by
+#   running multiple downloads, configures and builds in parallel
+# - apart from prefixing their names we also unset generic build arg
+#   environment variables for good measure because e.g. python's configure picks
+#   up LIBC
+# - force 4.19 kernel headers to avoid error "kernel too old" on GitLab CI
+RUN br_libc="${BR_LIBC}" ; \
+	unset BR_LIBC BR_RELEASE ; \
+	libcopt="$(echo "${br_libc}" | tr '[a-z]' '[A-Z]')" && \
+	( \
+		echo "BR2_aarch64_be=y" ; \
+		echo 'BR2_TOOLCHAIN_BUILDROOT_CXX=y' ; \
+		echo "BR2_TOOLCHAIN_BUILDROOT_${libcopt}=y" ; \
+		echo 'BR2_KERNEL_HEADERS_4_19=y' ; \
+		echo 'BR2_PACKAGE_GMP=y' ; \
+		echo 'BR2_PER_PACKAGE_DIRECTORIES=y' ; \
+	) > .config && \
+	make olddefconfig && \
+	make printvars VARS=GNU_TARGET_NAME | cut -d= -f 2- > triple && \
+	make -s -j$(nproc) && \
+	rm -rf output/build output/per-package dl
+	# no more stuff here so errors do not make us loose the build
+
+# - we create a dummy ld.so.cache to stop glibc's ld.so from segfaulting
+#   because of endianness differences:
+#   https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=731082. Fortunately, qemu
+#   will redirect file operations to the ld prefix if the file in question
+#   exists there. (We do not use --inhibit-cache because uClibc's ld.so does
+#   not support it.)
+# - generate a qemu wrapper to simplify use with the cpu forced to the right
+#   architecture to show up runtime problems through SIGILL
+RUN triple="$(cat triple)" && \
+	sysroot="/buildroot/output/host/${triple}/sysroot" && \
+	touch "${sysroot}"/etc/ld.so.cache && \
+	( echo '#!/bin/dash' ; \
+		echo "exec qemu-aarch64_be -L '${sysroot}'" \
+			'-E LD_LIBRARY_PATH="${LD_LIBRARY_PATH}" "$@"' ; \
+	) > qemu && \
+	chmod 755 qemu
+
+FROM debian:buster
+
+MAINTAINER Michael Weiser <michael.weiser@gmx.de>
+
+# buildroot toolchain brings autoconf, automake, libtool, bison and m4 but
+# autoconf/automake have some unresolved perl module dependencies
+RUN apt-get update -qq -y && \
+	apt-get dist-upgrade -y && \
+	apt-get autoremove -y && \
+	apt-get install -y autoconf dash g++ make qemu-user && \
+	apt-get clean all && \
+	rm -rf /var/lib/apt/lists/*
+
+# copy over only the toolchain, nothing else is needed, contains a sysroot with
+# enough of our dependencies to run the testsuite against
+COPY --from=build /buildroot/output/host /buildroot/output/host
+COPY --from=build /buildroot/qemu /buildroot/triple /buildroot/
+
+# put toolchain last in path to prefer host tools (autoconf)
+ENV PATH=/usr/sbin:/usr/bin:/sbin:/bin:/buildroot/output/host/bin
