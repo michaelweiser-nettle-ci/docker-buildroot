@@ -16,7 +16,7 @@ USER buildroot
 WORKDIR /buildroot
 
 ARG BR_ARCH=armv5b
-ARG BR_RELEASE=2020.02.8
+ARG BR_RELEASE=2020.11.1
 ARG BR_LIBC=uclibc
 
 # plain HTTP to allow caching, verification necessary anyway
